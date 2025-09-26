@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: todolist
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+      - name: backend
+        image: todolist-backend:latest
+        ports:
+        - containerPort: 3001
+        env:
+        - name: MONGODB_URI
+          value: "mongodb://admin:password@mongodb-service:27017/todolist?authSource=admin"
+        - name: PORT
+          value: "3001"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  namespace: todolist
+spec:
+  selector:
+    app: backend
+  ports:
+  - port: 3001
+    targetPort: 3001
+  type: ClusterIP

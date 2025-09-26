@@ -147,8 +147,132 @@ curl -X DELETE http://localhost:3001/todo/[ID]
 
 - **Backend**: NestJS, MongoDB, Mongoose
 - **Frontend**: Nuxt.js, Vue 3, TypeScript
+## � Docker Compose Deployment
+
+Alternatif deployment menggunakan Docker Compose:
+
+```bash
+# Jalankan semua services
+docker-compose up -d
+
+# Build ulang jika ada perubahan
+docker-compose up --build -d
+
+# Stop services
+docker-compose down
+
+# Stop dan hapus volumes
+docker-compose down -v
+```
+
+Services akan tersedia di:
+- Frontend: `http://localhost:3000`
+- Backend: `http://localhost:3001`
+- MongoDB: `localhost:27017`
+
+## �🚢 Kubernetes Deployment
+
+Aplikasi ini dapat dijalankan di Kubernetes dengan konfigurasi yang telah disiapkan.
+
+### Prerequisites
+- Docker
+- Kubernetes cluster (Minikube, Kind, atau cloud provider)
+- kubectl
+
+### Quick Deploy
+
+1. **Build dan deploy:**
+   ```bash
+   ./deploy-k8s.sh
+   ```
+
+2. **Akses aplikasi:**
+   - Frontend: `http://todolist.local`
+   - Backend API: `http://todolist.local/api`
+
+### Manual Deployment
+
+1. **Build Docker images:**
+   ```bash
+   # Backend
+   cd backend
+   docker build -t todolist-backend:latest .
+
+   # Frontend
+   cd ../frontend
+   docker build -t todolist-frontend:latest .
+   ```
+
+2. **Deploy ke Kubernetes:**
+   ```bash
+   kubectl apply -f k8s/namespace.yaml
+   kubectl apply -f k8s/mongodb.yaml
+   kubectl apply -f k8s/backend.yaml
+   kubectl apply -f k8s/frontend.yaml
+   kubectl apply -f k8s/ingress.yaml
+   ```
+
+3. **Check status:**
+   ```bash
+   kubectl get all -n todolist
+   ```
+
+### Architecture
+
+```
+Internet
+    ↓
+[Ingress Controller]
+    ↓
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Frontend      │    │   Backend       │    │   MongoDB       │
+│   (Nuxt.js)     │◄──►│   (NestJS)      │◄──►│   (Database)    │
+│   Port: 3000    │    │   Port: 3001    │    │   Port: 27017   │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+```
+
+### Services
+
+- **frontend-service**: LoadBalancer service untuk akses frontend
+- **backend-service**: ClusterIP service untuk komunikasi internal
+- **mongodb-service**: ClusterIP service untuk database
+
+### Persistent Storage
+
+MongoDB menggunakan PersistentVolumeClaim untuk penyimpanan data yang persistent.
+
+### Scaling
+
+```bash
+# Scale backend
+kubectl scale deployment backend --replicas=3 -n todolist
+
+# Scale frontend
+kubectl scale deployment frontend --replicas=5 -n todolist
+```
+
+### Troubleshooting
+
+```bash
+# Check pod status
+kubectl get pods -n todolist
+
+# Check pod logs
+kubectl logs -f deployment/backend -n todolist
+
+# Check services
+kubectl get services -n todolist
+
+# Port forward for debugging
+kubectl port-forward svc/frontend-service 3000:3000 -n todolist
+```
+
+## 🛠️ Tech Stack
+
+- **Frontend**: Nuxt.js 4, Vue 3, TypeScript
+- **Backend**: NestJS, Node.js, TypeScript
+- **Database**: MongoDB
 - **UI**: @nuxt/ui, Tailwind CSS, Heroicons
-- **Database**: MongoDB (Docker)
 - **Testing**: Jest, Supertest
 
 ## 📝 License

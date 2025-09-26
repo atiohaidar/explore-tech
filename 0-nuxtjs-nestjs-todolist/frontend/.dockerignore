@@ -1,0 +1,12 @@
+node_modules
+npm-debug.log
+.nuxt
+.output
+dist
+coverage
+.nyc_output
+.env
+.git
+.gitignore
+README.md
+*.log
