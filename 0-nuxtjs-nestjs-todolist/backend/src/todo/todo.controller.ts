@@ -4,7 +4,7 @@ import { Todo } from './schemas/todo.schema';
 
 @Controller('todo')
 export class TodoController {
-  constructor(private readonly todoService: TodoService) {}
+  constructor(private readonly todoService: TodoService) { }
 
   @Post()
   async create(@Body('title') title: string): Promise<Todo> {

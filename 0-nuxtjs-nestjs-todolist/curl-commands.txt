@@ -1,0 +1,31 @@
+# Curl commands untuk Todo API
+# Backend URL: http://localhost:3001
+
+# 1. Insert todo baru
+curl -X POST "http://localhost:3001/todo" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Belajar NestJS"}'
+
+# 2. Insert todo lainnya
+curl -X POST "http://localhost:3001/todo" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Belajar Nuxt.js"}'
+
+# 3. Insert todo lagi
+curl -X POST "http://localhost:3001/todo" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Setup MongoDB"}'
+
+# 4. Lihat semua todos
+curl "http://localhost:3001/todo"
+
+# 5. Update todo (ganti [ID] dengan ID yang sebenarnya)
+curl -X PUT "http://localhost:3001/todo/[ID]" \
+  -H "Content-Type: application/json" \
+  -d '{"completed": true}'
+
+# 6. Delete todo (ganti [ID] dengan ID yang sebenarnya)
+curl -X DELETE "http://localhost:3001/todo/[ID]"
+
+# 7. Lihat todo spesifik (ganti [ID] dengan ID yang sebenarnya)
+curl "http://localhost:3001/todo/[ID]"
