@@ -1,0 +1,9 @@
+kalau ngakses SSH itu sebaiknya jangan make root, tapi bikin user baru untuk ngelola VPS. jadi jangan make root
+
+root khusus tuga stertnetu aja
+
+
+dan untuk file manajemen yang kayak akses user siapa aja yang boleh buka, itu bisa make nama aplikasinya itu mc
+
+
+sudo apt install mc
