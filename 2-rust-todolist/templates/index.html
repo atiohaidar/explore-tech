@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rust Todo List</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚀 Rust Todo List</h1>
+            <p>A simple and beautiful todo list built with Rust</p>
+        </header>
+
+        <main>
+            <!-- Add Todo Form -->
+            <form action="/todos" method="post" class="add-form">
+                <input
+                    type="text"
+                    name="title"
+                    placeholder="What needs to be done?"
+                    required
+                    maxlength="200"
+                    class="todo-input"
+                >
+                <button type="submit" class="add-btn">Add Task</button>
+            </form>
+
+            <!-- Progress Stats -->
+            <div class="stats">
+                <div class="stat">
+                    <span class="stat-number">{{ total_count }}</span>
+                    <span class="stat-label">Total Tasks</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-number">{{ completed_count }}</span>
+                    <span class="stat-label">Completed</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-number">{{ total_count - completed_count }}</span>
+                    <span class="stat-label">Remaining</span>
+                </div>
+            </div>
+
+            <!-- Todo List -->
+            <div class="todo-list">
+                {% for todo in todos %}
+                <div class="todo-item {% if todo.completed %}completed{% endif %}">
+                    <form action="/todos/{{ todo.id }}/toggle" method="post" class="toggle-form">
+                        <button type="submit" class="toggle-btn">
+                            {% if todo.completed %}✓{% else %}○{% endif %}
+                        </button>
+                    </form>
+
+                    <span class="todo-title {% if todo.completed %}completed-text{% endif %}">
+                        {{ todo.title }}
+                    </span>
+
+                    <div class="todo-actions">
+                        <a href="/todos/{{ todo.id }}/edit" class="edit-btn">✏️</a>
+                        <form action="/todos/{{ todo.id }}/delete" method="post" class="delete-form">
+                            <button type="submit" class="delete-btn" onclick="return confirm('Delete this task?')">🗑️</button>
+                        </form>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- Clear Completed Button -->
+            {% if completed_count > 0 %}
+            <div class="clear-section">
+                <form action="/todos/completed/clear" method="post">
+                    <button type="submit" class="clear-btn" onclick="return confirm('Clear all completed tasks?')">
+                        Clear Completed ({{ completed_count }})
+                    </button>
+                </form>
+            </div>
+            {% endif %}
+
+            <!-- Empty State -->
+            {% if todos.is_empty() %}
+            <div class="empty-state">
+                <div class="empty-icon">📝</div>
+                <h3>No tasks yet</h3>
+                <p>Add your first task above to get started!</p>
+            </div>
+            {% endif %}
+        </main>
+
+        <footer>
+            <p>Built with ❤️ using Rust, Axum, and SQLite</p>
+        </footer>
+    </div>
+</body>
+</html>

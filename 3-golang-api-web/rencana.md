@@ -1,0 +1,1 @@
+aku disini mau nge buat project make golang. mungkin database nya make sqlite. project nya todolist aja
