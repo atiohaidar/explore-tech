@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Webcam Person Tracking (YOLO-ready)</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.20.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2"></script>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; background: #f4f7fb; }
+    h2 { color: #222; }
+    #controls { margin-bottom: 10px; }
+    video { border-radius: 6px; border: 1px solid #ddd; }
+    canvas { position: absolute; left: 0; top: 0; }
+    #wrapper { position: relative; display: inline-block; }
+    #status { margin-top: 10px; color: #555; }
+    .btn { padding: 8px 12px; margin-right: 8px; cursor: pointer; }
+    #fps { font-weight: bold; color: #0077cc; }
+    .caption { font-size: 13px; color: #666; }
+    /* layout for video + people list */
+    #mainContainer { display: flex; gap: 18px; align-items: flex-start; }
+    #leftArea { flex: 0 0 auto; }
+    #peoplePanel { width: 300px; background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.04); }
+    #peoplePanel h3 { margin: 0 0 8px 0; font-size: 16px; }
+    #peopleList { list-style: none; padding: 0; margin: 0; max-height: 480px; overflow-y: auto; }
+    .personEntry { display: flex; gap: 8px; align-items: center; padding: 6px; border-bottom: 1px solid #f0f0f0; }
+    .personEntry img { width: 64px; height: 48px; object-fit: cover; border-radius: 4px; cursor: pointer; }
+    .personMeta { font-size: 13px; color: #333; }
+    .personStatus { font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <h2>Deteksi & Tracking Orang (Demo Web)</h2>
+  <div id="controls">
+    <button id="startBtn" class="btn">Start Camera</button>
+    <button id="stopBtn" class="btn" disabled>Stop</button>
+    <span id="fps">FPS: -</span>
+    <!-- new: people count display -->
+    <span id="peopleInfo" style="margin-left:12px; font-weight:600; color:#222;">Orang: 0</span>
+    <!-- new: model selector -->
+    <div style="display:inline-block; margin-left:12px;">
+      <label for="modelSelect" style="font-size:13px; margin-right:6px;">Model:</label>
+      <select id="modelSelect" style="padding:6px; font-size:13px;">
+        <option value="coco">COCO-SSD (default)</option>
+        <option value="tfjs_yolo">TFJS YOLO (local)</option>
+      </select>
+      <input id="modelUrl" type="text" placeholder="/models/yolo/model.json" style="width:220px; padding:6px; margin-left:6px;" />
+      <button id="loadModelBtn" class="btn">Load</button>
+    </div>
+  </div>
+  <div class="caption">Detektor: COCO-SSD (person). Untuk menggunakan YOLO di browser, ganti pemuat/model dengan model YOLO TFJS yang sudah dikonversi.</div>
+
+  <div id="mainContainer">
+    <div id="leftArea">
+      <div id="wrapper">
+        <video id="video" width="640" height="480" autoplay muted playsinline></video>
+        <canvas id="overlay" width="640" height="480"></canvas>
+      </div>
+    </div>
+    <div id="peoplePanel">
+      <h3>Daftar Orang Masuk</h3>
+      <div style="font-size:13px;color:#555;margin-bottom:8px;">Tampil daftar unik orang yang pernah terdeteksi pada sesi ini. Klik thumbnail untuk buka atau klik kanan untuk download.</div>
+      <ul id="peopleList"></ul>
+    </div>
+  </div>
+
+  <div id="status">Status: menunggu...</div>
+
+  <script>
+    // Simple centroid tracker to assign persistent IDs to detected persons
+    class CentroidTracker {
+      constructor(maxDisappeared = 50, maxDistance = 80) {
+        this.nextObjectID = 0;
+        this.objects = {}; // objectID -> {box, centroid, score}
+        this.disappeared = {}; // objectID -> frames disappeared
+        this.maxDisappeared = maxDisappeared;
+        this.maxDistance = maxDistance;
+      }
+
+      register(box, centroid, score = null) {
+        this.objects[this.nextObjectID] = { box, centroid, score };
+        this.disappeared[this.nextObjectID] = 0;
+        // notify about new registration
+        if (typeof this.onRegister === 'function') {
+          try { this.onRegister(this.nextObjectID, box, centroid, score); } catch (e) { console.warn('onRegister error', e); }
+        }
+        this.nextObjectID += 1;
+      }
+
+      deregister(objectID) {
+        delete this.objects[objectID];
+        delete this.disappeared[objectID];
+        // notify about deregistration so UI can mark as left
+        if (typeof this.onDeregister === 'function') {
+          try { this.onDeregister(objectID); } catch (e) { console.warn('onDeregister error', e); }
+        }
+      }
+
+      update(boxes, scores) {
+        // boxes: array of [x, y, width, height]
+        if (boxes.length === 0) {
+          // mark all existing objects as disappeared
+          for (const id of Object.keys(this.disappeared)) {
+            this.disappeared[id] += 1;
+            if (this.disappeared[id] > this.maxDisappeared) {
+              this.deregister(id);
+            }
+          }
+          return this.objects;
+        }
+
+        const inputCentroids = boxes.map(b => {
+          const cX = Math.round(b[0] + b[2] / 2);
+          const cY = Math.round(b[1] + b[3] / 2);
+          return [cX, cY];
+        });
+
+        const objectIDs = Object.keys(this.objects).map(k => parseInt(k));
+
+        if (objectIDs.length === 0) {
+          // register all
+          for (let i = 0; i < boxes.length; i++) {
+            this.register(boxes[i], inputCentroids[i], scores[i]);
+          }
+          return this.objects;
+        }
+
+        // Build distance matrix between existing objects and new input centroids
+        const objectCentroids = objectIDs.map(id => this.objects[id].centroid);
+        const D = [];
+        for (let i = 0; i < objectCentroids.length; i++) {
+          const row = [];
+          for (let j = 0; j < inputCentroids.length; j++) {
+            const dx = objectCentroids[i][0] - inputCentroids[j][0];
+            const dy = objectCentroids[i][1] - inputCentroids[j][1];
+            row.push(Math.hypot(dx, dy));
+          }
+          D.push(row);
+        }
+
+        // Greedy matching: sort all (object, input) pairs by distance
+        const pairs = [];
+        for (let i = 0; i < D.length; i++) {
+          for (let j = 0; j < D[i].length; j++) {
+            pairs.push({ objectIdx: i, inputIdx: j, dist: D[i][j] });
+          }
+        }
+        pairs.sort((a, b) => a.dist - b.dist);
+
+        const assignedObjects = new Set();
+        const assignedInputs = new Set();
+        const matches = [];
+
+        for (const p of pairs) {
+          if (assignedObjects.has(p.objectIdx) || assignedInputs.has(p.inputIdx)) continue;
+          if (p.dist > this.maxDistance) continue;
+          assignedObjects.add(p.objectIdx);
+          assignedInputs.add(p.inputIdx);
+          matches.push(p);
+        }
+
+        // Update matched objects
+        const unmatchedObjects = new Set(Array.from(Array(objectCentroids.length).keys()));
+        const unmatchedInputs = new Set(Array.from(Array(inputCentroids.length).keys()));
+
+        for (const m of matches) {
+          const objectID = objectIDs[m.objectIdx];
+          const score = (scores && scores[m.inputIdx] != null) ? scores[m.inputIdx] : this.objects[objectID].score;
+          this.objects[objectID] = { box: boxes[m.inputIdx], centroid: inputCentroids[m.inputIdx], score };
+          this.disappeared[objectID] = 0;
+          unmatchedObjects.delete(m.objectIdx);
+          unmatchedInputs.delete(m.inputIdx);
+        }
+
+        // Mark unmatched existing objects as disappeared
+        for (const objIdx of unmatchedObjects) {
+          const objectID = objectIDs[objIdx];
+          this.disappeared[objectID] += 1;
+          if (this.disappeared[objectID] > this.maxDisappeared) {
+            this.deregister(objectID);
+          }
+        }
+
+        // Register unmatched input boxes as new objects
+        for (const inputIdx of unmatchedInputs) {
+          const score = (scores && scores[inputIdx] != null) ? scores[inputIdx] : null;
+          this.register(boxes[inputIdx], inputCentroids[inputIdx], score);
+        }
+
+        return this.objects;
+      }
+    }
+
+    // UI elements
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('overlay');
+    const ctx = canvas.getContext('2d');
+    const statusEl = document.getElementById('status');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const fpsEl = document.getElementById('fps');
+    const peopleInfoEl = document.getElementById('peopleInfo');
+    const peopleListEl = document.getElementById('peopleList');
+
+    // store unique people metadata for this session
+    const uniquePeople = {}; // id -> { thumbnail, firstSeen, lastSeen, active }
+
+    let model = null;
+    // keep a reference to the underlying coco-ssd model so we can proxy for mock YOLO
+    let cocoModel = null;
+    let tracker = new CentroidTracker(60, 80);
+    let running = false;
+    let stream = null;
+    // detectorType must be declared before calling loadModel to avoid TDZ errors
+    let detectorType = 'coco';
+
+    // Measurement for FPS
+    let lastTime = performance.now();
+    let frames = 0;
+
+    // Load default model in background so it's ready quickly
+    loadModel();
+
+    // -- Model loading implementation supporting COCO and TFJS YOLO wrapper --
+    // detectorType: 'coco' or 'yolo'
+    async function loadModel(forceReload = false) {
+      const sel = document.getElementById('modelSelect').value;
+      detectorType = (sel === 'tfjs_yolo') ? 'yolo' : 'coco';
+      const modelUrlInput = document.getElementById('modelUrl').value.trim();
+      statusEl.innerText = 'Status: memuat model...';
+      try {
+        if (detectorType === 'coco') {
+          cocoModel = await cocoSsd.load();
+          model = cocoModel;
+          statusEl.innerText = 'Status: model COCO-SSD siap.';
+        } else if (detectorType === 'yolo') {
+          if (!modelUrlInput) {
+            statusEl.innerText = 'Status: masukkan URL model TFJS pada kolom Model URL.';
+            model = null;
+            return;
+          }
+          // If the provided URL points to our mock model.json, create a proxy model
+          // that implements detect() by reusing coco-ssd. This is useful for testing
+          // with a local model.json placeholder. For a real TFJS YOLO graph model you
+          // should provide proper decoding/postprocess logic.
+          if (modelUrlInput.endsWith('/models/mock-yolo/model.json') || modelUrlInput.endsWith('mock-yolo/model.json')) {
+            // ensure cocoModel available
+            if (!cocoModel) cocoModel = await cocoSsd.load();
+            model = {
+              // mimic detect API
+              detect: async (videoEl) => {
+                // proxy to cocoModel but mark class as 'person' only
+                const preds = await cocoModel.detect(videoEl);
+                // return compatible format
+                return preds.map(p => ({ bbox: p.bbox, score: p.score, class: p.class }));
+              }
+            };
+            statusEl.innerText = 'Status: model mock-YOLO dimuat (proxy ke COCO-SSD). Ganti dengan model TFJS asli untuk hasil nyata.';
+          } else {
+            // try to load a TFJS graph model. Note: this only works directly if the model
+            // exposes a detect() wrapper similar to cocoSsd. If the model is a raw graph,
+            // postprocessing/decoding must be implemented separately for your YOLO variant.
+            model = await tf.loadGraphModel(modelUrlInput);
+            statusEl.innerText = 'Status: model TFJS (YOLO) dimuat — pastikan model memiliki detect() wrapper atau minta bantuan untuk menambahkan decoder.';
+          }
+        }
+      } catch (e) {
+        console.error('loadModel error', e);
+        statusEl.innerText = 'Status: gagal memuat model — ' + e.message + '. Kembali menggunakan COCO-SSD.';
+        // fallback
+        detectorType = 'coco';
+        model = await cocoSsd.load();
+      }
+    }
+
+    // capture a thumbnail image for a given bounding box from the current video frame
+    function captureThumbnailFromVideo(box) {
+      const [x, y, w, h] = box.map(v => Math.max(0, Math.round(v)));
+      const tmp = document.createElement('canvas');
+      tmp.width = Math.max(1, w);
+      tmp.height = Math.max(1, h);
+      const tctx = tmp.getContext('2d');
+      try {
+        tctx.drawImage(video, x, y, w, h, 0, 0, tmp.width, tmp.height);
+        return tmp.toDataURL('image/jpeg', 0.8);
+      } catch (e) {
+        console.warn('capture thumbnail failed', e);
+        return null;
+      }
+    }
+
+    // create a UI entry for a unique person
+    function addPersonEntry(id, thumbnailDataUrl, score) {
+      const li = document.createElement('li');
+      li.className = 'personEntry';
+      li.id = 'person-' + id;
+
+      const img = document.createElement('img');
+      img.src = thumbnailDataUrl || '';
+      img.alt = 'ID ' + id;
+      img.title = 'Klik untuk buka (ID ' + id + ')';
+      img.addEventListener('click', () => {
+        if (img.src) window.open(img.src, '_blank');
+      });
+
+      const meta = document.createElement('div');
+      meta.className = 'personMeta';
+      // display name if set, otherwise show ID
+      const displayName = uniquePeople[id] && uniquePeople[id].name ? uniquePeople[id].name : `ID ${id}`;
+      meta.innerHTML = `<div><span id="person-${id}-name" style="font-weight:600">${displayName}</span> <span id="person-${id}-score" style="margin-left:6px;color:#0077cc;">${score!=null?Math.round(score*100)+'%':''}</span></div><div class="personStatus" id="person-${id}-status">Aktif</div><div class="personTS" id="person-${id}-ts">${new Date().toLocaleTimeString()}</div>`;
+
+      // add edit button to rename this ID
+      const editBtn = document.createElement('button');
+      editBtn.textContent = '✎';
+      editBtn.style.marginLeft = '8px';
+      editBtn.title = 'Ganti nama orang';
+      editBtn.addEventListener('click', () => {
+        const current = (uniquePeople[id] && uniquePeople[id].name) ? uniquePeople[id].name : '';
+        const name = prompt('Masukkan nama untuk ID ' + id + ':', current);
+        if (name !== null) {
+          renamePerson(id, name.trim());
+        }
+      });
+      meta.appendChild(editBtn);
+
+      li.appendChild(img);
+      li.appendChild(meta);
+      peopleListEl.appendChild(li);
+    }
+
+    // rename a tracked ID to a human-friendly name and update UI
+    function renamePerson(id, newName) {
+      if (!uniquePeople[id]) uniquePeople[id] = { thumbnail: null, firstSeen: Date.now(), lastSeen: Date.now(), active: true };
+      uniquePeople[id].name = newName || '';
+      // update list display
+      const nameEl = document.getElementById(`person-${id}-name`);
+      if (nameEl) nameEl.innerText = (newName && newName.length > 0) ? newName : `ID ${id}`;
+      // update overlay label immediately (overlay uses uniquePeople when drawing)
+    }
+
+    function markPersonLeft(id) {
+      const statusEl = document.getElementById(`person-${id}-status`);
+      if (statusEl) statusEl.innerText = 'Keluar';
+      const li = document.getElementById('person-' + id);
+      if (li) li.style.opacity = '0.6';
+    }
+
+    function updatePersonLastSeen(id) {
+      const tsEl = document.getElementById(`person-${id}-ts`);
+      if (tsEl) tsEl.innerText = new Date().toLocaleTimeString();
+    }
+
+    async function detectLoop() {
+      if (!running) return;
+      // Run detection depending on selected detector. Do not call model.detect unless it exists.
+      let persons = [];
+      let boxes = [];
+      let scores = [];
+      if (detectorType === 'coco') {
+        let predictions = [];
+        if (model && typeof model.detect === 'function') {
+          try { predictions = await model.detect(video); } catch (e) { console.warn('COCO detect failed', e); predictions = []; }
+        }
+        persons = predictions.filter(p => p.class === 'person' && p.score > 0.3);
+        boxes = persons.map(p => [p.bbox[0], p.bbox[1], p.bbox[2], p.bbox[3]]);
+        scores = persons.map(p => p.score);
+      } else if (detectorType === 'yolo') {
+        if (model && typeof model.detect === 'function') {
+          try {
+            const ypred = await model.detect(video);
+            persons = ypred.filter(p => p.class === 'person' && p.score > 0.3);
+            boxes = persons.map(p => [p.bbox[0], p.bbox[1], p.bbox[2], p.bbox[3]]);
+            scores = persons.map(p => p.score);
+          } catch (e) {
+            // fallback: no compatible detect API
+            console.warn('YOLO model.detect failed or not compatible: ', e);
+            persons = [];
+            boxes = [];
+            scores = [];
+          }
+        } else {
+          // no detect API exposed — unable to run generic YOLO decoding here
+          // show message to user and fallback to empty detections
+        }
+      }
+
+      // Update tracker with scores
+      const objects = tracker.update(boxes, scores);
+
+      // Draw results
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Draw each tracked object
+      for (const [idStr, data] of Object.entries(objects)) {
+        const id = parseInt(idStr);
+        const [x, y, w, h] = data.box;
+        // box
+        ctx.strokeStyle = '#00FF88';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, w, h);
+        // label box
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        // show name (if assigned) and confidence percentage
+        const nameOrId = (uniquePeople[id] && uniquePeople[id].name && uniquePeople[id].name.length > 0) ? uniquePeople[id].name : ('ID ' + id);
+        const confText = (data.score != null) ? ` (${Math.round(data.score * 100)}%)` : '';
+        const label = nameOrId + confText;
+        ctx.fillRect(x, y - 20, Math.max(70, ctx.measureText(label).width + 12), 20);
+        ctx.fillStyle = '#fff';
+        ctx.font = '13px Arial';
+        ctx.fillText(label, x + 6, y - 6);
+        // centroid
+        ctx.fillStyle = '#ff0';
+        ctx.beginPath();
+        ctx.arc(data.centroid[0], data.centroid[1], 4, 0, 2 * Math.PI);
+        ctx.fill();
+        // update last seen timestamp for UI
+        if (uniquePeople[id]) { uniquePeople[id].lastSeen = Date.now(); uniquePeople[id].active = true; updatePersonLastSeen(id); }
+        // update score display in list
+        if (data.score != null) {
+          const scoreEl = document.getElementById(`person-${id}-score`);
+          if (scoreEl) scoreEl.innerText = Math.round(data.score * 100) + '%';
+        }
+      }
+
+      // Update FPS
+      frames += 1;
+      const now = performance.now();
+      const elapsed = now - lastTime;
+      if (elapsed >= 1000) {
+        const fps = Math.round((frames * 1000) / elapsed);
+        fpsEl.innerText = 'FPS: ' + fps;
+        frames = 0;
+        lastTime = now;
+      }
+
+      // Update people count info: current tracked and total unique IDs assigned
+      try {
+        const currentCount = Object.keys(objects).length;
+        const uniqueSeen = tracker.nextObjectID || 0;
+        if (peopleInfoEl) peopleInfoEl.innerText = `Orang: ${currentCount} (unik: ${uniqueSeen})`;
+      } catch (e) {
+        // ignore if tracker not ready
+      }
+
+      // Schedule next frame
+      requestAnimationFrame(detectLoop);
+    }
+
+    // Event handlers
+    startBtn.addEventListener('click', async () => {
+      // ensure selected model is loaded
+      if (!model) await loadModel();
+      startCamera();
+    });
+    stopBtn.addEventListener('click', () => stopCamera());
+    document.getElementById('loadModelBtn').addEventListener('click', async () => {
+      await loadModel(true);
+    });
+
+    // model selection handling
+    const modelSelectEl = document.getElementById('modelSelect');
+    modelSelectEl.addEventListener('change', () => {
+      // change detectorType selection (will take effect when Load pressed)
+      // Also update status
+      const sel = modelSelectEl.value;
+      if (sel === 'coco') statusEl.innerText = 'Status: COCO-SSD akan digunakan (tekan Load jika ingin memuat ulang).';
+      else statusEl.innerText = 'Status: Pilih URL model TFJS lalu tekan Load.';
+    });
+
+    async function startCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
+        video.srcObject = stream;
+        await video.play();
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        running = true;
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        statusEl.innerText = 'Status: kamera berjalan — mendeteksi...';
+        tracker = new CentroidTracker(60, 80);
+        // hook callbacks to update UI
+        tracker.onRegister = (id, box, centroid, score) => {
+          // capture thumbnail and add to the people list (show initial confidence)
+          const thumb = captureThumbnailFromVideo(box);
+          uniquePeople[id] = { thumbnail: thumb, firstSeen: Date.now(), lastSeen: Date.now(), active: true, score };
+          addPersonEntry(id, thumb, score);
+        };
+        tracker.onDeregister = (id) => {
+          if (uniquePeople[id]) { uniquePeople[id].active = false; uniquePeople[id].lastSeen = Date.now(); }
+          markPersonLeft(id);
+        };
+        lastTime = performance.now();
+        frames = 0;
+        detectLoop();
+      } catch (err) {
+        console.error(err);
+        statusEl.innerText = 'Status: gagal mengakses kamera — ' + err.message;
+      }
+    }
+
+    function stopCamera() {
+      running = false;
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+        stream = null;
+      }
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      statusEl.innerText = 'Status: kamera dihentikan.';
+      // Do not remove the people list on stop; keep the session history visible.
+    }
+  </script>
+</body>
+</html>
