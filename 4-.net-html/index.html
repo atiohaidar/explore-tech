@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Todo List</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+        }
+        .todo-form {
+            margin-bottom: 20px;
+        }
+        .todo-form input {
+            padding: 10px;
+            width: 70%;
+            margin-right: 10px;
+        }
+        .todo-form button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        .todo-list {
+            list-style-type: none;
+            padding: 0;
+        }
+        .todo-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+        .todo-item.completed {
+            text-decoration: line-through;
+            color: #888;
+        }
+        .todo-item input[type="checkbox"] {
+            margin-right: 10px;
+        }
+        .todo-item button {
+            margin-left: auto;
+            background-color: #f44336;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Todo List</h1>
+    <form class="todo-form" id="todoForm">
+        <input type="text" id="todoInput" placeholder="Enter a new todo" required>
+        <button type="submit">Add Todo</button>
+    </form>
+    <ul class="todo-list" id="todoList"></ul>
+
+    <script>
+        const apiUrl = 'http://localhost:5000'; // Adjust if backend runs on different port
+        const todoForm = document.getElementById('todoForm');
+        const todoInput = document.getElementById('todoInput');
+        const todoList = document.getElementById('todoList');
+
+        // Fetch and display todos
+        async function fetchTodos() {
+            try {
+                const response = await fetch(`${apiUrl}/todos`);
+                const todos = await response.json();
+                displayTodos(todos);
+            } catch (error) {
+                console.error('Error fetching todos:', error);
+            }
+        }
+
+        // Display todos in the list
+        function displayTodos(todos) {
+            todoList.innerHTML = '';
+            todos.forEach(todo => {
+                const li = document.createElement('li');
+                li.className = `todo-item ${todo.isCompleted ? 'completed' : ''}`;
+                li.innerHTML = `
+                    <input type="checkbox" ${todo.isCompleted ? 'checked' : ''} onchange="toggleTodo(${todo.id}, this.checked)">
+                    <span>${todo.title}</span>
+                    <button onclick="deleteTodo(${todo.id})">Delete</button>
+                `;
+                todoList.appendChild(li);
+            });
+        }
+
+        // Add a new todo
+        todoForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const title = todoInput.value.trim();
+            if (!title) return;
+
+            try {
+                const response = await fetch(`${apiUrl}/todos`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ title }),
+                });
+                if (response.ok) {
+                    todoInput.value = '';
+                    fetchTodos();
+                }
+            } catch (error) {
+                console.error('Error adding todo:', error);
+            }
+        });
+
+        // Toggle todo completion
+        async function toggleTodo(id, isCompleted) {
+            try {
+                const response = await fetch(`${apiUrl}/todos/${id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ title: '', isCompleted }), // Title will be updated if needed
+                });
+                if (response.ok) {
+                    fetchTodos();
+                }
+            } catch (error) {
+                console.error('Error updating todo:', error);
+            }
+        }
+
+        // Delete a todo
+        async function deleteTodo(id) {
+            try {
+                const response = await fetch(`${apiUrl}/todos/${id}`, {
+                    method: 'DELETE',
+                });
+                if (response.ok) {
+                    fetchTodos();
+                }
+            } catch (error) {
+                console.error('Error deleting todo:', error);
+            }
+        }
+
+        // Load todos on page load
+        fetchTodos();
+    </script>
+</body>
+</html>
