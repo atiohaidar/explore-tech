@@ -1,6 +1,0 @@
-{
-  "name": "mock-yolo",
-  "format": "mock-tfjs-yolo-marker",
-  "description": "This is a placeholder model.json to let the demo load a local model URL. It does not contain real model weights. Replace with a real TFJS model.json + weight shards for actual YOLO inference.",
-  "version": "0.1.0"
-}
