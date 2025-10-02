@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Original BertSum Text Summarizer</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .method-selector {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+        .method-btn {
+            padding: 8px 16px;
+            border: 2px solid #667eea;
+            background: white;
+            color: #667eea;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+        }
+        .method-btn.active {
+            background: #667eea;
+            color: white;
+        }
+        .method-btn:hover {
+            background: #667eea;
+            color: white;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        textarea {
+            width: 100%;
+            min-height: 150px;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-family: inherit;
+            font-size: 14px;
+            resize: vertical;
+        }
+        .controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        select, button {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #5a6fd8;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            display: none;
+        }
+        .success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .loading {
+            text-align: center;
+            color: #666;
+        }
+        .summary {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 4px solid #667eea;
+            white-space: pre-wrap;
+            line-height: 1.6;
+        }
+        .stats {
+            margin-top: 15px;
+            font-size: 12px;
+            color: #666;
+        }
+        .method-info {
+            background: #e7f3ff;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            border-left: 4px solid #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧠 Original BertSum Text Summarizer</h1>
+        <p class="subtitle">
+            Using pretrained models without training • Multiple summarization approaches
+        </p>
+
+        <div id="method-info" class="method-info">
+            <strong>Extractive:</strong> Selects important sentences from original text using BERT + clustering
+        </div>
+
+        <div class="method-selector">
+            <button class="method-btn active" data-method="extractive">Extractive</button>
+            <button class="method-btn" data-method="abstractive">Abstractive</button>
+            <button class="method-btn" data-method="hybrid">Hybrid</button>
+        </div>
+
+        <form id="summarizer-form">
+            <div class="form-group">
+                <label for="input-text">Input Text:</label>
+                <textarea id="input-text" placeholder="Paste your text here (minimum 50 characters)...">Natural language processing (NLP) is a subfield of linguistics, computer science, and artificial intelligence concerned with the interactions between computers and human language, in particular how to program computers to process and analyze large amounts of natural language data. The goal of NLP is to enable computers to understand, interpret, and generate human language in a way that is both meaningful and useful. Key applications include machine translation, sentiment analysis, text summarization, and question answering. Recent advances in deep learning, particularly transformer-based models like BERT, have significantly improved the performance of NLP systems across various tasks. Machine learning algorithms can be broadly classified into supervised, unsupervised, and reinforcement learning approaches. Supervised learning requires labeled training data, while unsupervised learning finds patterns in unlabeled data. Deep learning uses neural networks with multiple layers to model complex patterns in data.</textarea>
+            </div>
+
+            <div class="controls">
+                <div id="sentence-control" style="display: flex; align-items: center; gap: 10px;">
+                    <label for="num-sentences">Summary Length:</label>
+                    <select id="num-sentences">
+                        <option value="1">1 sentence</option>
+                        <option value="2" selected>2 sentences</option>
+                        <option value="3">3 sentences</option>
+                        <option value="4">4 sentences</option>
+                        <option value="5">5 sentences</option>
+                    </select>
+                </div>
+
+                <button type="submit" id="summarize-btn">📝 Summarize Text</button>
+                <button type="button" id="clear-btn">🗑️ Clear</button>
+            </div>
+        </form>
+
+        <div id="result" class="result">
+            <div id="result-content"></div>
+        </div>
+    </div>
+
+    <script>
+        // Method selection
+        const methodButtons = document.querySelectorAll('.method-btn');
+        const methodInfo = document.getElementById('method-info');
+        const sentenceControl = document.getElementById('sentence-control');
+        let currentMethod = 'extractive';
+
+        methodButtons.forEach(btn => {
+            btn.addEventListener('click', function() {
+                methodButtons.forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                currentMethod = this.dataset.method;
+
+                // Update info text
+                if (currentMethod === 'extractive') {
+                    methodInfo.innerHTML = '<strong>Extractive:</strong> Selects important sentences from original text using BERT + clustering';
+                    sentenceControl.style.display = 'flex';
+                } else if (currentMethod === 'abstractive') {
+                    methodInfo.innerHTML = '<strong>Abstractive:</strong> Generates new summary text using T5 transformer model';
+                    sentenceControl.style.display = 'none';
+                } else if (currentMethod === 'hybrid') {
+                    methodInfo.innerHTML = '<strong>Hybrid:</strong> BERT sentence selection + T5 text refinement';
+                    sentenceControl.style.display = 'flex';
+                }
+            });
+        });
+
+        // Form submission
+        document.getElementById('summarizer-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const text = document.getElementById('input-text').value.trim();
+            const numSentences = document.getElementById('num-sentences').value;
+            const btn = document.getElementById('summarize-btn');
+            const result = document.getElementById('result');
+            const resultContent = document.getElementById('result-content');
+
+            if (text.length < 50) {
+                resultContent.innerHTML = '<div class="error">❌ Text too short! Please enter at least 50 characters.</div>';
+                result.style.display = 'block';
+                return;
+            }
+
+            // Show loading
+            btn.disabled = true;
+            btn.textContent = '⏳ Processing...';
+            result.style.display = 'block';
+            resultContent.innerHTML = '<div class="loading">🧠 Analyzing text with ' + currentMethod + ' method...</div>';
+
+            try {
+                const response = await fetch('/summarize', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        text: text,
+                        num_sentences: parseInt(numSentences),
+                        method: currentMethod
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    resultContent.innerHTML = `<div class="error">❌ Error: ${data.error}</div>`;
+                } else {
+                    const wordCount = text.split(' ').length;
+                    const summaryWordCount = data.summary.split(' ').length;
+                    const compression = ((wordCount - summaryWordCount) / wordCount * 100).toFixed(1);
+
+                    let methodDisplay = currentMethod.charAt(0).toUpperCase() + currentMethod.slice(1);
+                    if (currentMethod === 'extractive') {
+                        methodDisplay += ` (${numSentences} sentences)`;
+                    }
+
+                    resultContent.innerHTML = `
+                        <div class="success">
+                            <h3>✅ Summary Generated (${methodDisplay})</h3>
+                            <div class="summary">${data.summary}</div>
+                            <div class="stats">
+                                📊 Original: ${wordCount} words |
+                                📝 Summary: ${summaryWordCount} words |
+                                📉 Compression: ${compression}%
+                            </div>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultContent.innerHTML = `<div class="error">❌ Network error: ${error.message}</div>`;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '📝 Summarize Text';
+            }
+        });
+
+        document.getElementById('clear-btn').addEventListener('click', function() {
+            document.getElementById('input-text').value = '';
+            document.getElementById('result').style.display = 'none';
+        });
+    </script>
+</body>
+</html>
