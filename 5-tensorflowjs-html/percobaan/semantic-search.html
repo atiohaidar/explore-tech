@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Semantic Search - Pencarian Semantik</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/universal-sentence-encoder@1.3.3/dist/universal-sentence-encoder.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #ff9ff3 0%, #f368e0 100%);
+      color: white;
+      padding: 30px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 2.5em;
+      margin-bottom: 10px;
+      font-weight: 700;
+    }
+
+    .header p {
+      font-size: 1.2em;
+      opacity: 0.9;
+    }
+
+    .content {
+      padding: 40px;
+    }
+
+    .search-section {
+      margin-bottom: 30px;
+    }
+
+    .search-section h2 {
+      color: #333;
+      margin-bottom: 20px;
+      font-size: 1.5em;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 15px;
+      border: 2px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 1em;
+      font-family: inherit;
+      margin-bottom: 15px;
+    }
+
+    .search-input:focus {
+      outline: none;
+      border-color: #ff9ff3;
+      box-shadow: 0 0 0 3px rgba(255, 159, 243, 0.1);
+    }
+
+    .controls {
+      display: flex;
+      gap: 15px;
+      margin: 20px 0;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      padding: 12px 25px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1em;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #ff9ff3 0%, #f368e0 100%);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(255, 159, 243, 0.3);
+    }
+
+    .btn-secondary {
+      background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);
+      color: white;
+    }
+
+    .btn-secondary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(116, 185, 255, 0.3);
+    }
+
+    .btn-success {
+      background: linear-gradient(135deg, #00b894 0%, #00cec9 100%);
+      color: white;
+    }
+
+    .btn-success:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(0, 184, 148, 0.3);
+    }
+
+    .settings-section {
+      background: #f8f9fa;
+      border-radius: 15px;
+      padding: 25px;
+      margin: 20px 0;
+      border: 2px solid #e0e0e0;
+    }
+
+    .settings-section h3 {
+      color: #333;
+      margin-bottom: 20px;
+      font-size: 1.3em;
+    }
+
+    .settings-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 20px;
+    }
+
+    .setting-item {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+
+    .setting-item label {
+      display: block;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 8px;
+    }
+
+    .setting-item input, .setting-item select {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      font-size: 1em;
+    }
+
+    .setting-item input:focus, .setting-item select:focus {
+      outline: none;
+      border-color: #ff9ff3;
+    }
+
+    .database-section {
+      background: #f8f9fa;
+      border-radius: 15px;
+      padding: 25px;
+      margin: 20px 0;
+      border: 2px solid #e0e0e0;
+    }
+
+    .database-section h3 {
+      color: #333;
+      margin-bottom: 20px;
+      font-size: 1.3em;
+    }
+
+    .database-textarea {
+      width: 100%;
+      min-height: 200px;
+      padding: 15px;
+      border: 2px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 1em;
+      font-family: inherit;
+      resize: vertical;
+      margin-bottom: 15px;
+    }
+
+    .database-textarea:focus {
+      outline: none;
+      border-color: #74b9ff;
+      box-shadow: 0 0 0 3px rgba(116, 185, 255, 0.1);
+    }
+
+    .database-controls {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    .dummy-data-buttons {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 8px;
+    }
+
+    .database-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .status {
+      padding: 15px;
+      border-radius: 10px;
+      margin: 20px 0;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .status.loading {
+      background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);
+      color: white;
+    }
+
+    .status.success {
+      background: linear-gradient(135deg, #00b894 0%, #00cec9 100%);
+      color: white;
+    }
+
+    .status.error {
+      background: linear-gradient(135deg, #ff7675 0%, #e17055 100%);
+      color: white;
+    }
+
+    .results {
+      margin-top: 30px;
+    }
+
+    .results h3 {
+      color: #333;
+      margin-bottom: 20px;
+      font-size: 1.4em;
+    }
+
+    .result-item {
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      margin: 10px 0;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+      border-left: 5px solid #ff9ff3;
+    }
+
+    .result-score {
+      font-weight: bold;
+      color: #ff9ff3;
+      font-size: 1.1em;
+      margin-bottom: 10px;
+    }
+
+    .result-text {
+      color: #333;
+      line-height: 1.6;
+      margin-bottom: 10px;
+    }
+
+    .result-meta {
+      font-size: 0.9em;
+      color: #666;
+    }
+
+    .sample-searches {
+      margin-top: 30px;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 10px;
+    }
+
+    .sample-searches h3 {
+      color: #333;
+      margin-bottom: 15px;
+    }
+
+    .sample-buttons {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 10px;
+    }
+
+    .sample-btn {
+      padding: 10px;
+      background: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-align: left;
+    }
+
+    .sample-btn:hover {
+      background: #f1f2f6;
+      border-color: #ff9ff3;
+    }
+
+    .footer {
+      background: #2d3436;
+      color: white;
+      text-align: center;
+      padding: 20px;
+      font-size: 0.9em;
+    }
+
+    .footer a {
+      color: #74b9ff;
+      text-decoration: none;
+    }
+
+    .footer a:hover {
+      text-decoration: underline;
+    }
+
+    @media (max-width: 768px) {
+      .content {
+        padding: 20px;
+      }
+
+      .header h1 {
+        font-size: 2em;
+      }
+
+      .results {
+        grid-template-columns: 1fr;
+      }
+
+      .controls {
+        flex-direction: column;
+      }
+
+      .btn {
+        width: 100%;
+      }
+
+      .settings-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .loading-spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(255,255,255,.3);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: spin 1s ease-in-out infinite;
+      margin-right: 10px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Loading Modal */
+    .loading-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 10000;
+      backdrop-filter: blur(5px);
+    }
+
+    .loading-content {
+      background: white;
+      padding: 40px;
+      border-radius: 20px;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      max-width: 400px;
+      width: 90%;
+    }
+
+    .loading-spinner-large {
+      width: 50px;
+      height: 50px;
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #ff9ff3;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+
+    .loading-text {
+      color: #333;
+      font-size: 1.2em;
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+
+    .loading-subtext {
+      color: #666;
+      font-size: 0.9em;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🔍 Semantic Search</h1>
+      <p>Pencarian Semantik dengan Universal Sentence Encoder</p>
+    </div>
+
+    <div class="content">
+      <div class="search-section">
+        <h2>🔎 Cari Teks Secara Semantik</h2>
+        <input type="text" id="searchInput" class="search-input" placeholder="Ketik query pencarian Anda di sini... Contoh: 'makanan sehat' akan menemukan teks tentang nutrisi, diet, dll." onkeypress="handleKeyPress(event)">
+
+        <div class="controls">
+          <button class="btn btn-primary" onclick="performSearch()">
+            🔍 Cari
+          </button>
+          <button class="btn btn-secondary" onclick="clearResults()">
+            🗑️ Bersihkan
+          </button>
+          <button class="btn btn-success" onclick="toggleSettings()">
+            ⚙️ Pengaturan
+          </button>
+        </div>
+      </div>
+
+      <div id="settingsSection" class="settings-section" style="display: none;">
+        <h3>⚙️ Pengaturan Semantic Search</h3>
+        <div class="settings-grid">
+          <div class="setting-item">
+            <label for="similarityThreshold">Threshold Similarity (0-1):</label>
+            <input type="number" id="similarityThreshold" min="0" max="1" step="0.1" value="0.3">
+            <small style="color: #666;">Semakin tinggi, semakin ketat pencarian (default: 0.3)</small>
+          </div>
+
+          <div class="setting-item">
+            <label for="maxResults">Maksimal Hasil:</label>
+            <input type="number" id="maxResults" min="1" max="50" value="10">
+            <small style="color: #666;">Jumlah maksimal hasil yang ditampilkan (diurutkan dari similarity tertinggi)</small>
+          </div>
+
+          <div class="setting-item">
+            <label for="searchMode">Mode Pencarian:</label>
+            <select id="searchMode">
+              <option value="cosine">Cosine Similarity</option>
+              <option value="euclidean">Euclidean Distance</option>
+              <option value="manhattan">Manhattan Distance</option>
+            </select>
+            <small style="color: #666;">Metode perhitungan similarity</small>
+            <div id="searchModeInfo" style="margin-top: 5px; font-size: 0.8em; color: #888; font-style: italic;">
+              Pilih mode untuk melihat penjelasan
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div id="results" class="results" style="display: none;">
+        <h3>📋 Hasil Pencarian</h3>
+        <div id="resultsList">
+          <!-- Results will be populated here -->
+        </div>
+      </div>
+
+      <div class="database-section">
+        <h3>📚 Database Teks untuk Pencarian</h3>
+        <textarea id="databaseText" class="database-textarea" placeholder="Masukkan teks-teks yang akan dicari secara semantik. Pisahkan setiap dokumen dengan baris kosong atau simbol ===
+
+Contoh:
+Makanan sehat sangat penting untuk kesehatan tubuh. Nutrisi yang baik membantu sistem kekebalan tubuh.
+
+===
+
+Olahraga teratur dapat meningkatkan kebugaran fisik dan mental. Berjalan kaki setiap hari sudah cukup baik.
+
+===
+
+Teknologi AI berkembang pesat di era digital saat ini. Machine learning memungkinkan komputer belajar dari data."></textarea>
+
+        <div class="database-controls">
+          <div class="dummy-data-buttons">
+            <span style="font-size: 0.9em; color: #666; margin-bottom: 10px; display: block;">📚 Pilih Data Dummy:</span>
+            <button class="btn btn-success" onclick="loadSampleDatabase('health')">
+              🥗 Kesehatan & Nutrisi
+            </button>
+            <button class="btn btn-success" onclick="loadSampleDatabase('tech')">
+              💻 Teknologi & AI
+            </button>
+            <button class="btn btn-success" onclick="loadSampleDatabase('business')">
+              � Bisnis & Ekonomi
+            </button>
+            <button class="btn btn-success" onclick="loadSampleDatabase('education')">
+              📚 Pendidikan
+            </button>
+            <button class="btn btn-success" onclick="loadSampleDatabase('mixed')">
+              🎭 Campuran
+            </button>
+          </div>
+
+          <div class="database-actions" style="margin-top: 15px;">
+            <button class="btn btn-secondary" onclick="saveDatabase()">
+              💾 Simpan Database
+            </button>
+            <button class="btn" onclick="clearDatabase()" style="background: #fdcb6e; color: #333;">
+              🗑️ Hapus Database
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div id="status" class="status" style="display: none;">
+        Status akan muncul di sini
+      </div>
+
+      <div class="sample-searches">
+        <h3>💡 Contoh Query Pencarian</h3>
+        <div class="sample-buttons">
+          <button class="sample-btn" onclick="setSearchQuery('makanan sehat')">
+            🍎 "makanan sehat" - akan menemukan teks tentang nutrisi
+          </button>
+          <button class="sample-btn" onclick="setSearchQuery('olahraga')">
+            🏃 "olahraga" - akan menemukan teks tentang kebugaran
+          </button>
+          <button class="sample-btn" onclick="setSearchQuery('teknologi AI')">
+            🤖 "teknologi AI" - akan menemukan teks tentang kecerdasan buatan
+          </button>
+          <button class="sample-btn" onclick="setSearchQuery('belajar programming')">
+            💻 "belajar programming" - akan menemukan teks tentang coding
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading Modal -->
+    <div id="loadingModal" class="loading-modal" style="display: none;">
+      <div class="loading-content">
+        <div class="loading-spinner-large"></div>
+        <div class="loading-text" id="loadingText">Memuat Model...</div>
+        <div class="loading-subtext" id="loadingSubtext">Mohon tunggu sebentar</div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div style="margin-bottom: 15px;">
+        <h4 style="margin: 0 0 10px 0; font-size: 1.1em; color: #74b9ff;">🧠 Teknologi Semantic Search:</h4>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; font-size: 0.9em; color: #ddd;">
+          <div>
+            <strong>🧠 Universal Sentence Encoder</strong><br>
+            <span style="color: #a29bfe;">• Vektor embedding 512 dimensi</span><br>
+            <span style="color: #a29bfe;">• Semantic understanding</span><br>
+            <span style="color: #a29bfe;">• Multi-language support</span>
+          </div>
+          <div>
+            <strong>🔍 Similarity Metrics</strong><br>
+            <span style="color: #fd79a8;">• Cosine similarity</span><br>
+            <span style="color: #fd79a8;">• Euclidean distance</span><br>
+            <span style="color: #fd79a8;">• Manhattan distance</span>
+          </div>
+          <div>
+            <strong>⚙️ Customizable Settings</strong><br>
+            <span style="color: #00b894;">• Adjustable threshold</span><br>
+            <span style="color: #00b894;">• Configurable results limit</span><br>
+            <span style="color: #00b894;">• Multiple similarity methods</span>
+          </div>
+        </div>
+      </div>
+      <p style="margin: 10px 0; color: #ddd;">
+        <strong>🚀 Fitur:</strong> Semantic search • Real-time processing • Custom database • Configurable settings
+      </p>
+      <p style="margin: 5px 0; color: #bbb; font-size: 0.9em;">
+        Semantic Search dengan TensorFlow.js • Model size: ~15MB • Inference: <100ms per query
+      </p>
+    </div>
+  </div>
+
+  <script>
+    // Global variables
+    let useEncoder = null;
+    let databaseEmbeddings = [];
+    let databaseTexts = [];
+    let isInitialized = false;
+
+    // Default sample database
+    const sampleDatabase = `Makanan sehat sangat penting untuk kesehatan tubuh manusia. Nutrisi yang baik dari sayuran, buah-buahan, dan protein berkualitas tinggi membantu menjaga sistem kekebalan tubuh tetap kuat. Pola makan seimbang dapat mencegah berbagai penyakit kronis seperti diabetes dan penyakit jantung.
+
+===
+
+Olahraga teratur merupakan kunci untuk menjaga kebugaran fisik dan mental. Berjalan kaki selama 30 menit setiap hari, berenang, atau bersepeda sudah cukup untuk menjaga kesehatan jantung dan meningkatkan mood. Aktivitas fisik juga membantu mengurangi stres dan meningkatkan kualitas tidur.
+
+===
+
+Teknologi kecerdasan buatan atau Artificial Intelligence berkembang pesat di era digital saat ini. Machine learning memungkinkan komputer untuk belajar dari data dan membuat prediksi. Deep learning dengan neural network telah merevolusi bidang computer vision, natural language processing, dan autonomous vehicles.
+
+===
+
+Belajar programming adalah skill penting di abad ke-21. Bahasa seperti Python, JavaScript, dan Java banyak digunakan untuk pengembangan web, mobile apps, dan data science. Memahami algoritma dan struktur data merupakan fondasi penting untuk menjadi programmer yang handal.
+
+===
+
+Lingkungan hidup harus dijaga kelestariannya untuk generasi mendatang. Pengurangan emisi karbon, daur ulang sampah, dan penghijauan dapat membantu mengatasi perubahan iklim. Setiap individu dapat berkontribusi dengan mengurangi penggunaan plastik dan memilih transportasi ramah lingkungan.
+
+===
+
+Pendidikan berkualitas adalah hak setiap anak. Sistem pendidikan yang baik mencakup kurikulum yang relevan, guru yang kompeten, dan fasilitas yang memadai. Teknologi digital dapat meningkatkan akses pendidikan di daerah terpencil melalui platform e-learning.
+
+===
+
+Kesehatan mental sama pentingnya dengan kesehatan fisik. Stres, anxiety, dan depresi dapat mempengaruhi produktivitas dan kualitas hidup. Olahraga, meditasi, dan dukungan sosial dapat membantu menjaga kesehatan mental yang baik.
+
+===
+
+Energi terbarukan seperti matahari, angin, dan air merupakan solusi untuk mengatasi krisis energi. Panel surya dan turbin angin semakin efisien dan ekonomis. Transisi ke energi bersih dapat mengurangi ketergantungan pada bahan bakar fosil.
+
+===
+
+Bisnis online atau e-commerce telah mengubah cara kita berbelanja. Platform seperti marketplace memudahkan konsumen menemukan produk dan jasa. Digital marketing melalui media sosial menjadi strategi penting untuk menjangkau pelanggan potensial.
+
+===
+
+Seni dan budaya merupakan bagian penting dari identitas suatu bangsa. Musik, tari, dan seni rupa dapat menyampaikan nilai-nilai dan cerita. Pelestarian budaya tradisional penting untuk menjaga keragaman budaya di tengah globalisasi.`;
+
+    // Initialize the application
+    async function init() {
+      showLoading('🔄 Memuat Universal Sentence Encoder', 'Model sedang dimuat dari CDN...');
+
+      try {
+        // Load Universal Sentence Encoder
+        console.log('📥 Loading Universal Sentence Encoder...');
+        useEncoder = await use.load();
+        console.log('✅ USE model loaded successfully');
+
+        hideLoading();
+        showStatus('✅ Model siap digunakan! Silakan masukkan database teks.', 'success');
+
+        isInitialized = true;
+
+        // Load saved settings and database
+        loadSettings();
+        loadSavedDatabase();
+
+        // Clean up old localStorage items
+        localStorage.removeItem('sort_order');
+
+        // Hide status after 3 seconds
+        setTimeout(() => {
+          document.getElementById('status').style.display = 'none';
+        }, 3000);
+
+      } catch (error) {
+        console.error('❌ Error loading model:', error);
+        hideLoading();
+        showStatus('❌ Gagal memuat model. Periksa koneksi internet.', 'error');
+      }
+    }
+
+    // Show status message
+    function showStatus(message, type) {
+      const statusDiv = document.getElementById('status');
+      statusDiv.textContent = message;
+      statusDiv.className = `status ${type}`;
+      statusDiv.style.display = 'block';
+    }
+
+    // Show loading modal
+    function showLoading(text = 'Memproses...', subtext = 'Mohon tunggu sebentar') {
+      const modal = document.getElementById('loadingModal');
+      const textDiv = document.getElementById('loadingText');
+      const subtextDiv = document.getElementById('loadingSubtext');
+
+      textDiv.textContent = text;
+      subtextDiv.textContent = subtext;
+      modal.style.display = 'flex';
+    }
+
+    // Hide loading modal
+    function hideLoading() {
+      const modal = document.getElementById('loadingModal');
+      modal.style.display = 'none';
+    }
+
+    // Handle enter key press in search input
+    function handleKeyPress(event) {
+      if (event.key === 'Enter') {
+        performSearch();
+      }
+    }
+
+    // Set search query from sample buttons
+    function setSearchQuery(query) {
+      document.getElementById('searchInput').value = query;
+    }
+
+    // Toggle settings visibility
+    function toggleSettings() {
+      const settings = document.getElementById('settingsSection');
+      settings.style.display = settings.style.display === 'none' ? 'block' : 'none';
+    }
+
+    // Load sample database based on category
+    function loadSampleDatabase(category = 'mixed') {
+      const databases = {
+        health: `Makanan sehat sangat penting untuk kesehatan tubuh manusia. Nutrisi yang baik dari sayuran, buah-buahan, dan protein berkualitas tinggi membantu menjaga sistem kekebalan tubuh tetap kuat. Pola makan seimbang dapat mencegah berbagai penyakit kronis seperti diabetes dan penyakit jantung.
+
+===
+
+Olahraga teratur merupakan kunci untuk menjaga kebugaran fisik dan mental. Berjalan kaki selama 30 menit setiap hari, berenang, atau bersepeda sudah cukup untuk menjaga kesehatan jantung dan meningkatkan mood. Aktivitas fisik juga membantu mengurangi stres dan meningkatkan kualitas tidur.
+
+===
+
+Kesehatan mental sama pentingnya dengan kesehatan fisik. Stres, anxiety, dan depresi dapat mempengaruhi produktivitas dan kualitas hidup. Olahraga, meditasi, dan dukungan sosial dapat membantu menjaga kesehatan mental yang baik.
+
+===
+
+Tidur yang cukup merupakan fondasi kesehatan yang baik. Orang dewasa membutuhkan 7-9 jam tidur per malam. Kualitas tidur yang baik membantu pemulihan tubuh, meningkatkan daya ingat, dan memperkuat sistem kekebalan tubuh.`,
+
+        tech: `Teknologi kecerdasan buatan atau Artificial Intelligence berkembang pesat di era digital saat ini. Machine learning memungkinkan komputer untuk belajar dari data dan membuat prediksi. Deep learning dengan neural network telah merevolusi bidang computer vision, natural language processing, dan autonomous vehicles.
+
+===
+
+Belajar programming adalah skill penting di abad ke-21. Bahasa seperti Python, JavaScript, dan Java banyak digunakan untuk pengembangan web, mobile apps, dan data science. Memahami algoritma dan struktur data merupakan fondasi penting untuk menjadi programmer yang handal.
+
+===
+
+Internet of Things atau IoT menghubungkan berbagai perangkat elektronik melalui internet. Smart home devices, wearable technology, dan industrial sensors memungkinkan automasi dan monitoring real-time. Keamanan siber menjadi tantangan utama dalam ekosistem IoT.
+
+===
+
+Cloud computing telah mengubah cara bisnis mengelola infrastruktur IT. Platform seperti AWS, Google Cloud, dan Microsoft Azure menyediakan layanan skalabel dan fleksibel. Serverless computing memungkinkan developer fokus pada kode tanpa mengelola server.
+
+===
+
+Blockchain technology tidak hanya untuk cryptocurrency. Distributed ledger technology dapat digunakan untuk supply chain tracking, digital identity, dan smart contracts. Keamanan dan transparansi adalah keunggulan utama blockchain.`,
+
+        business: `Bisnis online atau e-commerce telah mengubah cara kita berbelanja. Platform seperti marketplace memudahkan konsumen menemukan produk dan jasa. Digital marketing melalui media sosial menjadi strategi penting untuk menjangkau pelanggan potensial.
+
+===
+
+Startup technology berkembang pesat dengan dukungan venture capital. Inovasi digital dalam fintech, healthtech, dan edtech menarik minat investor. Scaling business dan mencapai product-market fit merupakan tantangan utama startup.
+
+===
+
+Sustainable business practices semakin penting di era modern. Perusahaan yang menerapkan ESG (Environmental, Social, Governance) criteria mendapatkan keunggulan kompetitif. Green technology dan circular economy menjadi tren utama dalam bisnis berkelanjutan.
+
+===
+
+Remote work culture telah berubah permanen pasca pandemi. Flexible working arrangements meningkatkan work-life balance dan mengurangi biaya operasional. Collaboration tools seperti Slack, Zoom, dan Microsoft Teams menjadi essential.
+
+===
+
+Digital transformation diperlukan untuk tetap kompetitif. Automatisasi proses bisnis, analitik data, dan customer experience personalization menjadi fokus utama. Teknologi seperti AI dan big data mendorong efisiensi operasional.`,
+
+        education: `Pendidikan berkualitas adalah hak setiap anak. Sistem pendidikan yang baik mencakup kurikulum yang relevan, guru yang kompeten, dan fasilitas yang memadai. Teknologi digital dapat meningkatkan akses pendidikan di daerah terpencil melalui platform e-learning.
+
+===
+
+Online learning platforms seperti Coursera, edX, dan Udemy menyediakan akses pendidikan global. Massive Open Online Courses (MOOCs) memungkinkan siapa saja belajar dari universitas terkemuka. Personalized learning dengan AI menjadi tren masa depan pendidikan.
+
+===
+
+STEM education (Science, Technology, Engineering, Mathematics) sangat penting untuk mempersiapkan generasi muda menghadapi tantangan masa depan. Coding, robotics, dan data science skills menjadi increasingly valuable di pasar kerja.
+
+===
+
+Inclusive education memastikan semua siswa mendapatkan kesempatan yang sama. Universal Design for Learning (UDL) principles membantu mengakomodasi berbagai kebutuhan belajar. Teknologi assistive seperti screen readers dan speech recognition mendukung accessibility.
+
+===
+
+Lifelong learning adalah konsep penting di era knowledge economy. Continuous skill development diperlukan untuk tetap relevan. Micro-credentials dan digital badges menjadi alternatif baru untuk traditional degrees.`,
+
+        mixed: `Makanan sehat sangat penting untuk kesehatan tubuh. Nutrisi yang baik membantu sistem kekebalan tubuh.
+
+===
+
+Olahraga teratur dapat meningkatkan kebugaran fisik dan mental. Berjalan kaki setiap hari sudah cukup baik.
+
+===
+
+Teknologi AI berkembang pesat di era digital saat ini. Machine learning memungkinkan komputer belajar dari data.
+
+===
+
+Belajar programming adalah skill penting di abad ke-21. Python dan JavaScript banyak digunakan untuk development.
+
+===
+
+Bisnis online telah mengubah cara kita berbelanja. Digital marketing melalui media sosial menjadi strategi penting.
+
+===
+
+Pendidikan berkualitas adalah hak setiap anak. Teknologi digital meningkatkan akses pendidikan.
+
+===
+
+Kesehatan mental sama pentingnya dengan kesehatan fisik. Meditasi dan dukungan sosial membantu menjaga kesehatan mental.
+
+===
+
+Energi terbarukan seperti matahari dan angin merupakan solusi untuk krisis energi. Panel surya semakin ekonomis.
+
+===
+
+Seni dan budaya merupakan bagian penting dari identitas bangsa. Pelestarian budaya tradisional sangat penting.`
+      };
+
+      const selectedDatabase = databases[category] || databases.mixed;
+      document.getElementById('databaseText').value = selectedDatabase;
+
+      const categoryNames = {
+        health: 'Kesehatan & Nutrisi',
+        tech: 'Teknologi & AI',
+        business: 'Bisnis & Ekonomi',
+        education: 'Pendidikan',
+        mixed: 'Campuran'
+      };
+
+      showStatus(`✅ Database ${categoryNames[category]} berhasil dimuat!`, 'success');
+      setTimeout(() => {
+        document.getElementById('status').style.display = 'none';
+      }, 2000);
+    }
+
+    // Save database to localStorage
+    function saveDatabase() {
+      const databaseText = document.getElementById('databaseText').value.trim();
+      if (databaseText) {
+        localStorage.setItem('semantic_search_database', databaseText);
+        showStatus('✅ Database berhasil disimpan!', 'success');
+      } else {
+        showStatus('❌ Database kosong, tidak dapat disimpan!', 'error');
+      }
+      setTimeout(() => {
+        document.getElementById('status').style.display = 'none';
+      }, 2000);
+    }
+
+    // Load saved database from localStorage
+    function loadSavedDatabase() {
+      const savedDatabase = localStorage.getItem('semantic_search_database');
+      if (savedDatabase) {
+        document.getElementById('databaseText').value = savedDatabase;
+      }
+    }
+
+    // Clear database
+    function clearDatabase() {
+      if (confirm('Apakah Anda yakin ingin menghapus database?')) {
+        document.getElementById('databaseText').value = '';
+        localStorage.removeItem('semantic_search_database');
+        databaseEmbeddings = [];
+        databaseTexts = [];
+        showStatus('✅ Database berhasil dihapus!', 'success');
+        setTimeout(() => {
+          document.getElementById('status').style.display = 'none';
+        }, 2000);
+      }
+    }
+
+    // Load settings from localStorage
+    function loadSettings() {
+      const threshold = localStorage.getItem('similarity_threshold') || '0.3';
+      const maxResults = localStorage.getItem('max_results') || '10';
+      const searchMode = localStorage.getItem('search_mode') || 'cosine';
+
+      document.getElementById('similarityThreshold').value = threshold;
+      document.getElementById('maxResults').value = maxResults;
+      document.getElementById('searchMode').value = searchMode;
+    }
+
+    // Save settings to localStorage
+    function saveSettings() {
+      const threshold = document.getElementById('similarityThreshold').value;
+      const maxResults = document.getElementById('maxResults').value;
+      const searchMode = document.getElementById('searchMode').value;
+
+      localStorage.setItem('similarity_threshold', threshold);
+      localStorage.setItem('max_results', maxResults);
+      localStorage.setItem('search_mode', searchMode);
+    }
+
+    // Perform semantic search
+    async function performSearch() {
+      const query = document.getElementById('searchInput').value.trim();
+      const databaseText = document.getElementById('databaseText').value.trim();
+
+      if (!query) {
+        showStatus('❌ Masukkan query pencarian!', 'error');
+        return;
+      }
+
+      if (!databaseText) {
+        showStatus('❌ Masukkan database teks terlebih dahulu!', 'error');
+        return;
+      }
+
+      if (!isInitialized) {
+        showStatus('❌ Model belum dimuat. Tunggu sebentar...', 'error');
+        return;
+      }
+
+      showLoading('� Melakukan Pencarian Semantik', 'Menganalisis teks dan menghitung similarity...');
+
+      try {
+        // Save current settings
+        saveSettings();
+
+        // Process database if not already processed
+        if (databaseTexts.length === 0 || databaseEmbeddings.length === 0) {
+          await processDatabase(databaseText);
+        }
+
+        // Generate query embedding
+        const queryEmbedding = await useEncoder.embed([query]);
+        const queryVector = await queryEmbedding.array();
+
+        // Calculate similarities
+        const similarities = await calculateSimilarities(queryVector[0], databaseEmbeddings);
+
+        // Get settings
+        const threshold = parseFloat(document.getElementById('similarityThreshold').value);
+        const maxResults = parseInt(document.getElementById('maxResults').value);
+
+        // Filter and sort results (always descending by similarity score)
+        let results = similarities
+          .map((sim, index) => ({
+            score: sim,
+            text: databaseTexts[index],
+            index: index
+          }))
+          .filter(result => result.score >= threshold)
+          .sort((a, b) => b.score - a.score) // Always sort by highest similarity first
+          .slice(0, maxResults);
+
+        // Display results
+        displayResults(query, results);
+        hideLoading();
+        showStatus(`✅ Ditemukan ${results.length} hasil pencarian!`, 'success');
+
+      } catch (error) {
+        console.error('❌ Search error:', error);
+        hideLoading();
+        showStatus('❌ Gagal melakukan pencarian!', 'error');
+      }
+    }
+
+    // Process database text into embeddings
+    async function processDatabase(databaseText) {
+      console.log('📚 Processing database...');
+
+      // Split database into documents (split by === or empty lines)
+      databaseTexts = databaseText
+        .split(/===|\n\s*\n/)
+        .map(doc => doc.trim())
+        .filter(doc => doc.length > 0);
+
+      console.log(`📊 Found ${databaseTexts.length} documents`);
+
+      if (databaseTexts.length === 0) {
+        throw new Error('No valid documents found in database');
+      }
+
+      // Generate embeddings for all documents
+      console.log('🧮 Generating embeddings for database...');
+      const embeddings = await useEncoder.embed(databaseTexts);
+      databaseEmbeddings = await embeddings.array();
+
+      console.log('✅ Database processed successfully');
+    }
+
+    // Calculate similarities between query and database embeddings
+    async function calculateSimilarities(queryVector, databaseEmbeddings) {
+      const searchMode = document.getElementById('searchMode').value;
+      const similarities = [];
+
+      for (const docEmbedding of databaseEmbeddings) {
+        let similarity = 0;
+
+        if (searchMode === 'cosine') {
+          similarity = cosineSimilarity(queryVector, docEmbedding);
+        } else if (searchMode === 'euclidean') {
+          similarity = 1 / (1 + euclideanDistance(queryVector, docEmbedding)); // Convert distance to similarity
+        } else if (searchMode === 'manhattan') {
+          similarity = 1 / (1 + manhattanDistance(queryVector, docEmbedding)); // Convert distance to similarity
+        }
+
+        similarities.push(similarity);
+      }
+
+      return similarities;
+    }
+
+    // Cosine similarity calculation
+    function cosineSimilarity(vecA, vecB) {
+      let dotProduct = 0;
+      let normA = 0;
+      let normB = 0;
+
+      for (let i = 0; i < vecA.length; i++) {
+        dotProduct += vecA[i] * vecB[i];
+        normA += vecA[i] * vecA[i];
+        normB += vecB[i] * vecB[i];
+      }
+
+      normA = Math.sqrt(normA);
+      normB = Math.sqrt(normB);
+
+      return dotProduct / (normA * normB);
+    }
+
+    // Euclidean distance calculation
+    function euclideanDistance(vecA, vecB) {
+      let sum = 0;
+      for (let i = 0; i < vecA.length; i++) {
+        sum += Math.pow(vecA[i] - vecB[i], 2);
+      }
+      return Math.sqrt(sum);
+    }
+
+    // Manhattan distance calculation
+    function manhattanDistance(vecA, vecB) {
+      let sum = 0;
+      for (let i = 0; i < vecA.length; i++) {
+        sum += Math.abs(vecA[i] - vecB[i]);
+      }
+      return sum;
+    }
+
+    // Display search results
+    function displayResults(query, results) {
+      const resultsDiv = document.getElementById('results');
+      const resultsList = document.getElementById('resultsList');
+
+      if (results.length === 0) {
+        resultsList.innerHTML = `
+          <div class="result-item" style="border-left-color: #ff7675;">
+            <div class="result-text">❌ Tidak ditemukan hasil yang sesuai dengan query "${query}"</div>
+            <div class="result-meta">Coba turunkan threshold similarity atau periksa database Anda.</div>
+          </div>
+        `;
+      } else {
+        resultsList.innerHTML = results.map(result => `
+          <div class="result-item">
+            <div class="result-score">Similarity: ${(result.score * 100).toFixed(2)}%</div>
+            <div class="result-text">${highlightQuery(result.text, query)}</div>
+            <div class="result-meta">Dokumen #${result.index + 1} • Panjang: ${result.text.length} karakter</div>
+          </div>
+        `).join('');
+      }
+
+      resultsDiv.style.display = 'block';
+    }
+
+    // Highlight query terms in result text (simple implementation)
+    function highlightQuery(text, query) {
+      const queryWords = query.toLowerCase().split(/\s+/);
+      let highlightedText = text;
+
+      queryWords.forEach(word => {
+        if (word.length > 2) { // Only highlight words longer than 2 characters
+          const regex = new RegExp(`(${word})`, 'gi');
+          highlightedText = highlightedText.replace(regex, '<mark>$1</mark>');
+        }
+      });
+
+      return highlightedText;
+    }
+
+    // Clear results
+    function clearResults() {
+      document.getElementById('results').style.display = 'none';
+      document.getElementById('searchInput').value = '';
+      document.getElementById('status').style.display = 'none';
+    }
+
+    // Update search mode information
+    function updateSearchModeInfo() {
+      const searchMode = document.getElementById('searchMode').value;
+      const infoDiv = document.getElementById('searchModeInfo');
+
+      const explanations = {
+        cosine: '📐 Cosine Similarity: Mengukur sudut antara dua vektor. Nilai 1 berarti identik, 0 berarti tidak mirip. Bagus untuk teks karena tidak terpengaruh panjang vektor.',
+        euclidean: '📏 Euclidean Distance: Jarak lurus antara dua titik dalam ruang berdimensi. Nilai kecil berarti lebih mirip. Sensitif terhadap skala data.',
+        manhattan: '🏙️ Manhattan Distance: Jumlah absolut selisih koordinat. Disebut "manhattan" karena seperti berjalan di grid kota. Lebih robust terhadap outlier.'
+      };
+
+      infoDiv.textContent = explanations[searchMode] || 'Pilih mode pencarian';
+    }
+
+    // Initialize when page loads
+    window.addEventListener('load', function() {
+      init();
+      updateSearchModeInfo();
+
+      // Add event listener for search mode changes
+      const searchModeSelect = document.getElementById('searchMode');
+      if (searchModeSelect) {
+        searchModeSelect.addEventListener('change', updateSearchModeInfo);
+      }
+    });
+  </script>
+</body>
+</html>
