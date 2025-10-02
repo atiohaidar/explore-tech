@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deteksi Objek Real-Time dengan TensorFlow.js</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.5/dist/teachablemachine-image.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .main-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .video-container {
+            position: relative;
+            display: inline-block;
+        }
+        #video, #canvas {
+            border: 1px solid #ccc;
+            margin: 10px;
+        }
+        #canvas {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            display: block; /* Default: tampilkan untuk COCO-SSD */
+        }
+        #canvas.hidden {
+            display: none; /* Sembunyikan untuk Teachable Machine */
+        }
+        .table-container {
+            width: 400px;
+            margin-left: 20px;
+        }
+        #tm-results table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+        }
+        #tm-results th, #tm-results td {
+            border: 1px solid #ddd;
+            padding: 6px;
+            text-align: left;
+        }
+        #tm-results th {
+            background-color: #e8f4fd;
+        }
+        #tm-json-display {
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .thumbnail {
+            width: 80px;
+            height: 60px;
+            object-fit: cover;
+        }
+        button {
+            padding: 5px 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .model-controls {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .model-controls h3 {
+            margin-top: 0;
+        }
+        .model-controls input[type="file"] {
+            margin: 10px 0;
+        }
+        .model-controls button {
+            margin-right: 10px;
+        }
+        #status {
+            text-align: center;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Deteksi Objek Real-Time dengan TensorFlow.js</h1>
+    <p>Aplikasi deteksi objek dengan dukungan model COCO-SSD built-in, model custom TensorFlow.js, dan model Teachable Machine.</p>
+    <p id="status">Memuat model...</p>
+    
+    <div class="model-controls">
+        <h3>Pilih Model AI</h3>
+        <p>Model saat ini: <span id="current-model">COCO-SSD (Built-in)</span></p>
+        <button id="use-builtin-btn">Gunakan Model Built-in (COCO-SSD)</button>
+        <br><br>
+        <label for="model-files">Upload Model Custom:</label><br>
+        <input type="file" id="model-files" multiple accept=".json,.bin,.pb,.h5">
+        <button id="load-custom-btn">Load Custom Model</button>
+        <p><small>Upload file model.json dan file weights (.bin, .pb, atau .h5)</small></p>
+        <br>
+        <label for="tm-url">URL Model Teachable Machine:</label><br>
+        <input type="url" id="tm-url" placeholder="https://teachablemachine.withgoogle.com/models/XXXXX/" style="width: 300px; padding: 5px;">
+        <button id="load-tm-btn">Load Teachable Machine Model</button>
+        <p><small>Masukkan URL model dari Teachable Machine (contoh: https://teachablemachine.withgoogle.com/models/ZPusUnpPQ/)</small></p>
+        <p><small><strong>Cara mendapatkan URL:</strong> Setelah export model di Teachable Machine, copy URL dari bagian "Your model is ready!"</small></p>
+    </div>
+    
+    <div class="main-container">
+        <div class="video-container">
+            <video id="video" width="640" height="480" autoplay muted></video>
+            <canvas id="canvas" width="640" height="480"></canvas>
+        </div>
+        <div class="table-container">
+            <h3>Objek Terdeteksi</h3>
+            <table id="detection-table">
+                <thead>
+                    <tr>
+                        <th>Thumbnail</th>
+                        <th>Nama Objek</th>
+                        <th>Akurasi</th>
+                        <th>Aksi</th>
+                    </tr>
+                </thead>
+                <tbody id="detection-tbody">
+                    <!-- Objek terdeteksi akan ditampilkan di sini -->
+                </tbody>
+            </table>
+            
+            <!-- Area untuk hasil Teachable Machine -->
+            <div id="tm-results" style="display: none; margin-top: 20px;">
+                <h3>Hasil Prediksi Teachable Machine</h3>
+                <table id="tm-results-table">
+                    <thead>
+                        <tr>
+                            <th>Kelas</th>
+                            <th>Probabilitas</th>
+                            <th>Persentase</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tm-results-tbody">
+                        <!-- Hasil prediksi akan ditampilkan di sini -->
+                    </tbody>
+                </table>
+                <div id="tm-json-display" style="margin-top: 15px; padding: 10px; background-color: #f5f5f5; border-radius: 5px; font-family: monospace; white-space: pre-wrap; max-height: 200px; overflow-y: auto;">
+                    <!-- JSON lengkap akan ditampilkan di sini -->
+                </div>
+            </div>
+        </div>
+    </div>
+    <p>Objek terdeteksi akan ditampilkan dengan bounding box, nama, posisi, dan akurasi.</p>
+    <div style="margin-top: 20px; padding: 15px; background-color: #f0f8ff; border-radius: 5px;">
+        <h3>Cara Menggunakan Model:</h3>
+        <h4>1. Model Built-in (COCO-SSD):</h4>
+        <p>Klik "Gunakan Model Built-in" untuk deteksi objek umum (80+ jenis objek).</p>
+        
+        <h4>2. Model Custom:</h4>
+        <ol>
+            <li>Siapkan model TensorFlow.js Anda dalam format JSON (model.json) dan weights (.bin files)</li>
+            <li>Klik "Choose Files" dan pilih file model.json dan file weights</li>
+            <li>Klik "Load Custom Model" untuk memuat model Anda</li>
+            <li><strong>Catatan:</strong> Model custom perlu preprocessing dan postprocessing yang sesuai. Edit kode detectObjects() untuk menyesuaikan dengan model Anda.</li>
+        </ol>
+        
+        <h4>3. Model Teachable Machine:</h4>
+        <ol>
+            <li>Buat atau gunakan model dari <a href="https://teachablemachine.withgoogle.com/" target="_blank">Teachable Machine</a></li>
+            <li>Copy URL model (contoh: https://teachablemachine.withgoogle.com/models/ZPusUnpPQ/)</li>
+            <li>Paste URL di input field dan klik "Load Teachable Machine Model"</li>
+            <li><strong>Catatan:</strong> Model Teachable Machine biasanya untuk klasifikasi gambar, bukan object detection dengan bounding box. Hasil akan ditampilkan dalam tabel probabilitas dan JSON lengkap. Video akan tampil langsung tanpa overlay.</li>
+            <li><strong>Troubleshooting:</strong>
+                <ul>
+                    <li>Pastikan URL valid dan model dapat diakses</li>
+                    <li>Jika error CORS terjadi, model mungkin perlu di-host ulang di server Anda sendiri</li>
+                    <li>Untuk development lokal, gunakan server HTTP (bukan file://)</li>
+                </ul>
+            </li>
+        </ol>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const status = document.getElementById('status');
+        const detectionTbody = document.getElementById('detection-tbody');
+        const tmResultsDiv = document.getElementById('tm-results');
+        const tmResultsTbody = document.getElementById('tm-results-tbody');
+        const tmJsonDisplay = document.getElementById('tm-json-display');
+
+        console.log('TM elements found:', {
+            tmResultsDiv: !!tmResultsDiv,
+            tmResultsTbody: !!tmResultsTbody,
+            tmJsonDisplay: !!tmJsonDisplay
+        });
+        const currentModelSpan = document.getElementById('current-model');
+        const useBuiltinBtn = document.getElementById('use-builtin-btn');
+        const loadCustomBtn = document.getElementById('load-custom-btn');
+        const modelFilesInput = document.getElementById('model-files');
+        const tmUrlInput = document.getElementById('tm-url');
+        const loadTmBtn = document.getElementById('load-tm-btn');
+
+        let model;
+        let modelType = 'coco-ssd'; // 'coco-ssd', 'custom', atau 'teachable-machine'
+        let detectedObjects = new Map(); // Map untuk menyimpan objek unik berdasarkan nama
+
+        // Fungsi untuk memuat model COCO-SSD
+        async function loadCocoSsdModel() {
+            try {
+                status.textContent = 'Memuat model COCO-SSD...';
+                model = await cocoSsd.load();
+                modelType = 'coco-ssd';
+                currentModelSpan.textContent = 'COCO-SSD (Built-in)';
+                status.textContent = 'Model COCO-SSD dimuat. Mengakses kamera...';
+                toggleTableVisibility();
+                startVideo();
+            } catch (error) {
+                status.textContent = 'Error memuat model COCO-SSD: ' + error.message;
+                console.error(error);
+            }
+        }
+
+        // Fungsi untuk memuat model custom
+        async function loadCustomModel(files) {
+            try {
+                status.textContent = 'Memuat model custom...';
+                
+                // Cari file model.json
+                let modelJsonFile = null;
+                const weightFiles = [];
+                
+                for (let file of files) {
+                    if (file.name === 'model.json') {
+                        modelJsonFile = file;
+                    } else if (file.name.endsWith('.bin') || file.name.endsWith('.pb') || file.name.endsWith('.h5')) {
+                        weightFiles.push(file);
+                    }
+                }
+                
+                if (!modelJsonFile) {
+                    throw new Error('File model.json tidak ditemukan');
+                }
+                
+                // Load model dari files
+                const modelUrl = URL.createObjectURL(modelJsonFile);
+                model = await tf.loadLayersModel(modelUrl);
+                
+                // Load weights jika ada
+                if (weightFiles.length > 0) {
+                    // Untuk model dengan weights terpisah, kita perlu handle berbeda
+                    // Ini simplified version - model seharusnya sudah include weights
+                }
+                
+                modelType = 'custom';
+                currentModelSpan.textContent = 'Custom Model';
+                status.textContent = 'Model custom dimuat. Mengakses kamera...';
+                toggleTableVisibility();
+                startVideo();
+                
+            } catch (error) {
+                status.textContent = 'Error memuat model custom: ' + error.message;
+                console.error(error);
+            }
+        }
+
+        // Fungsi untuk test koneksi ke model Teachable Machine
+        async function testTeachableMachineURL(url) {
+            try {
+                // Test apakah model.json dapat diakses
+                const response = await fetch(url + 'model.json', { method: 'HEAD' });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return true;
+            } catch (error) {
+                throw new Error(`Tidak dapat mengakses model: ${error.message}`);
+            }
+        }
+
+        // Fungsi untuk memuat model Teachable Machine
+        async function loadTeachableMachineModel(url) {
+            try {
+                status.textContent = 'Testing koneksi ke model...';
+                
+                // Test koneksi terlebih dahulu
+                await testTeachableMachineURL(url);
+                
+                status.textContent = 'Memuat model Teachable Machine...';
+                
+                // Pastikan library sudah dimuat
+                if (typeof tmImage === 'undefined') {
+                    throw new Error('Library Teachable Machine belum dimuat. Pastikan koneksi internet stabil.');
+                }
+                
+                // Load model dari URL Teachable Machine
+                model = await tmImage.load(url + 'model.json', url + 'metadata.json');
+                console.log('Teachable Machine model loaded successfully:', model);
+                
+                modelType = 'teachable-machine';
+                currentModelSpan.textContent = 'Teachable Machine Model';
+                status.textContent = 'Model Teachable Machine dimuat. Mengakses kamera...';
+                toggleTableVisibility();
+                console.log('Table visibility toggled for TM model');
+                startVideo();
+                
+            } catch (error) {
+                status.textContent = 'Error memuat model Teachable Machine: ' + error.message;
+                console.error('Teachable Machine loading error:', error);
+                
+                // Berikan informasi troubleshooting
+                if (error.message.includes('404') || error.message.includes('Not Found')) {
+                    status.textContent += ' - Pastikan URL model valid dan dapat diakses.';
+                } else if (error.message.includes('CORS') || error.message.includes('NetworkError')) {
+                    status.textContent += ' - Model mungkin tidak mengizinkan akses dari domain ini. Host ulang model di server Anda.';
+                } else if (error.message.includes('Tidak dapat mengakses model')) {
+                    status.textContent += ' - URL tidak valid atau model tidak tersedia.';
+                }
+            }
+        }
+
+        // Event listeners untuk tombol
+        useBuiltinBtn.addEventListener('click', () => {
+            loadCocoSsdModel();
+        });
+
+        loadCustomBtn.addEventListener('click', () => {
+            const files = modelFilesInput.files;
+            if (files.length === 0) {
+                alert('Pilih file model terlebih dahulu');
+                return;
+            }
+            loadCustomModel(files);
+        });
+
+        loadTmBtn.addEventListener('click', () => {
+            const url = tmUrlInput.value.trim();
+            if (!url) {
+                alert('Masukkan URL model Teachable Machine');
+                return;
+            }
+            
+            // Validasi URL
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                alert('URL harus dimulai dengan http:// atau https://');
+                return;
+            }
+            
+            if (!url.includes('teachablemachine.withgoogle.com/models/')) {
+                alert('URL harus dari Teachable Machine (teachablemachine.withgoogle.com/models/)');
+                return;
+            }
+            
+            // Pastikan URL berakhir dengan '/'
+            const cleanUrl = url.endsWith('/') ? url : url + '/';
+            loadTeachableMachineModel(cleanUrl);
+        });
+
+        // Fungsi untuk mengakses kamera
+        async function startVideo() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                video.onloadedmetadata = () => {
+                    status.textContent = 'Kamera aktif. Mulai deteksi...';
+                    detectObjects();
+                };
+            } catch (error) {
+                status.textContent = 'Error mengakses kamera: ' + error.message;
+                console.error(error);
+            }
+        }
+
+        // Fungsi untuk capture objek
+        function captureObject(className, bbox, score) {
+            const [x, y, width, height] = bbox;
+            
+            // Buat canvas sementara untuk crop objek
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCanvas.width = width;
+            tempCanvas.height = height;
+            
+            // Crop dari canvas utama
+            tempCtx.drawImage(canvas, x, y, width, height, 0, 0, width, height);
+            
+            // Konversi ke data URL
+            const thumbnail = tempCanvas.toDataURL('image/jpeg', 0.8);
+            
+            // Update objek di Map
+            detectedObjects.set(className, {
+                thumbnail: thumbnail,
+                score: score,
+                bbox: bbox,
+                lastSeen: Date.now()
+            });
+            
+            // Update tabel sesuai dengan model yang digunakan
+            if (modelType === 'coco-ssd' || modelType === 'custom') {
+                updateDetectionTable();
+            }
+            // Untuk Teachable Machine, tabel diupdate di detectObjects
+        }
+
+        // Fungsi untuk update tabel hasil Teachable Machine
+        function updateTMResultsTable(predictions) {
+            console.log('Updating TM results table with:', predictions);
+            
+            const tbody = document.getElementById('tm-results-tbody');
+            const jsonDisplay = document.getElementById('tm-json-display');
+            const resultsDiv = document.getElementById('tm-results');
+            
+            if (!tbody || !jsonDisplay || !resultsDiv) {
+                console.error('TM results elements not found');
+                return;
+            }
+            
+            tbody.innerHTML = '';
+            jsonDisplay.textContent = '';
+            
+            if (!predictions || predictions.length === 0) {
+                console.warn('No predictions to display');
+                tbody.innerHTML = '<tr><td colspan="3">Tidak ada prediksi</td></tr>';
+                jsonDisplay.textContent = '[]';
+                resultsDiv.style.display = 'block';
+                return;
+            }
+            
+            // Sort predictions by probability (highest first)
+            predictions.sort((a, b) => b.probability - a.probability);
+            
+            console.log('Sorted predictions:', predictions);
+            
+            // Tampilkan dalam tabel
+            predictions.forEach((prediction, index) => {
+                const row = document.createElement('tr');
+                
+                // Kelas
+                const classCell = document.createElement('td');
+                classCell.textContent = prediction.className || 'Unknown';
+                
+                // Probabilitas (desimal)
+                const probCell = document.createElement('td');
+                probCell.textContent = prediction.probability ? prediction.probability.toFixed(4) : '0.0000';
+                
+                // Persentase
+                const percentCell = document.createElement('td');
+                const percentage = prediction.probability ? (prediction.probability * 100).toFixed(2) + '%' : '0.00%';
+                percentCell.textContent = percentage;
+                
+                // Highlight highest probability
+                if (index === 0) {
+                    row.style.backgroundColor = '#e8f5e8';
+                    row.style.fontWeight = 'bold';
+                }
+                
+                row.appendChild(classCell);
+                row.appendChild(probCell);
+                row.appendChild(percentCell);
+                
+                tbody.appendChild(row);
+            });
+            
+            // Tampilkan JSON lengkap
+            jsonDisplay.textContent = JSON.stringify(predictions, null, 2);
+            
+            // Tampilkan area hasil TM
+            resultsDiv.style.display = 'block';
+            
+            console.log('TM results table updated successfully');
+        }
+
+        // Fungsi untuk update tabel deteksi objek (untuk COCO-SSD dan custom model)
+        function updateDetectionTable() {
+            detectionTbody.innerHTML = '';
+            
+            detectedObjects.forEach((data, className) => {
+                const row = document.createElement('tr');
+                
+                // Thumbnail
+                const thumbnailCell = document.createElement('td');
+                const img = document.createElement('img');
+                img.src = data.thumbnail;
+                img.className = 'thumbnail';
+                thumbnailCell.appendChild(img);
+                
+                // Nama Objek
+                const nameCell = document.createElement('td');
+                nameCell.textContent = className;
+                
+                // Akurasi
+                const accuracyCell = document.createElement('td');
+                accuracyCell.textContent = Math.round(data.score * 100) + '%';
+                
+                // Tombol Capture
+                const actionCell = document.createElement('td');
+                const captureBtn = document.createElement('button');
+                captureBtn.textContent = 'Capture';
+                captureBtn.onclick = () => captureObject(className, data.bbox, data.score);
+                actionCell.appendChild(captureBtn);
+                
+                row.appendChild(thumbnailCell);
+                row.appendChild(nameCell);
+                row.appendChild(accuracyCell);
+                row.appendChild(actionCell);
+                
+                detectionTbody.appendChild(row);
+            });
+        }
+
+        // Fungsi untuk toggle tampilan tabel berdasarkan model
+        function toggleTableVisibility() {
+            const detectionTable = document.getElementById('detection-table');
+            const tmResults = document.getElementById('tm-results');
+            const canvas = document.getElementById('canvas');
+            
+            if (modelType === 'teachable-machine') {
+                // Sembunyikan tabel deteksi, tampilkan tabel TM, sembunyikan canvas
+                if (detectionTable) detectionTable.style.display = 'none';
+                if (tmResults) tmResults.style.display = 'block';
+                if (canvas) canvas.classList.add('hidden');
+            } else {
+                // Tampilkan tabel deteksi, sembunyikan tabel TM, tampilkan canvas
+                if (detectionTable) detectionTable.style.display = 'table';
+                if (tmResults) tmResults.style.display = 'none';
+                if (canvas) canvas.classList.remove('hidden');
+            }
+        }
+
+        // Fungsi untuk mendeteksi objek
+        async function detectObjects() {
+            if (!model) return;
+
+            try {
+                let predictions = [];
+
+                if (modelType === 'coco-ssd') {
+                    // Deteksi menggunakan COCO-SSD
+                    predictions = await model.detect(video);
+                } else if (modelType === 'teachable-machine') {
+                    try {
+                        // Deteksi menggunakan model Teachable Machine
+                        // Beberapa model TM memerlukan preprocessing
+                        let inputImage = video;
+                        
+                        // Coba predict langsung dengan video element
+                        let prediction;
+                        try {
+                            prediction = await model.predict(inputImage);
+                        } catch (preprocessError) {
+                            console.log('Direct prediction failed, trying with canvas preprocessing');
+                            
+                            // Jika gagal, coba dengan preprocessing
+                            const canvas = document.createElement('canvas');
+                            const ctx = canvas.getContext('2d');
+                            canvas.width = 224; // Standard size untuk banyak model TM
+                            canvas.height = 224;
+                            ctx.drawImage(video, 0, 0, 224, 224);
+                            
+                            prediction = await model.predict(canvas);
+                        }
+                        
+                        console.log('Teachable Machine predictions:', prediction); // Debug log
+                        
+                        // Validasi predictions
+                        if (!prediction || prediction.length === 0) {
+                            console.warn('No predictions from Teachable Machine model');
+                            tmResultsTbody.innerHTML = '<tr><td colspan="3">Tidak ada prediksi</td></tr>';
+                            tmJsonDisplay.textContent = '[]';
+                            tmResultsDiv.style.display = 'block';
+                            predictions = [];
+                            return;
+                        }
+                        
+                        // Update hasil prediksi di tabel
+                        updateTMResultsTable(prediction);
+                        
+                        // Untuk Teachable Machine, kita tidak menggambar bounding box
+                        // karena ini adalah model klasifikasi, bukan object detection
+                        predictions = []; // Kosongkan predictions agar tidak menggambar bounding box
+                        
+                    } catch (error) {
+                        console.error('Error predicting with Teachable Machine:', error);
+                        status.textContent = 'Error prediksi Teachable Machine: ' + error.message;
+                        tmResultsTbody.innerHTML = '<tr><td colspan="3">Error: ' + error.message + '</td></tr>';
+                        tmResultsDiv.style.display = 'block';
+                        predictions = [];
+                    }
+                }
+
+                // Gambar frame video ke canvas (hanya untuk model yang menggunakan bounding box)
+                if (modelType !== 'teachable-machine') {
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                }
+
+                // Gambar bounding box dan informasi untuk setiap objek terdeteksi (hanya untuk model yang mendukung)
+                if (modelType !== 'teachable-machine') {
+                    predictions.forEach(prediction => {
+                        const [x, y, width, height] = prediction.bbox;
+                        const className = prediction.class;
+                        const score = prediction.score;
+
+                        // Gambar bounding box
+                        ctx.strokeStyle = '#00FF00';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(x, y, width, height);
+
+                        // Gambar label dengan nama, posisi, dan akurasi
+                        ctx.fillStyle = '#00FF00';
+                        ctx.font = '16px Arial';
+                        const label = `${className} (${Math.round(score * 100)}%)`;
+                        const posInfo = `Pos: (${Math.round(x)}, ${Math.round(y)}) ${Math.round(width)}x${Math.round(height)}`;
+                        
+                        ctx.fillText(label, x, y - 10);
+                        ctx.fillText(posInfo, x, y + height + 20);
+
+                        // Tambahkan ke detected objects jika belum ada atau akurasi lebih tinggi
+                        if (!detectedObjects.has(className) || detectedObjects.get(className).score < score) {
+                            captureObject(className, prediction.bbox, score);
+                        }
+                    });
+                }
+
+            } catch (error) {
+                console.error('Error during detection:', error);
+                status.textContent = 'Error deteksi: ' + error.message;
+            }
+
+            // Loop untuk deteksi real-time
+            requestAnimationFrame(detectObjects);
+        }
+
+        // Mulai aplikasi dengan model default
+        canvas.classList.remove('hidden'); // Pastikan canvas visible di awal
+        toggleTableVisibility(); // Set visibility awal
+        loadCocoSsdModel();
+    </script>
+</body>
+</html>
