@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WASM Sederhana dengan Go</title>
+</head>
+<body>
+    <h1>Aplikasi Web Sederhana dengan WebAssembly</h1>
+    <button onclick="runWasm()">Klik untuk Hello dari WASM</button>
+    <div id="output"></div>
+
+    <script src="wasm_exec.js"></script>
+    <script>
+        async function runWasm() {
+            const go = new Go();
+            const response = await fetch('main.wasm');
+            const buffer = await response.arrayBuffer();
+            const result = await WebAssembly.instantiate(buffer, go.importObject);
+            go.run(result.instance);
+            // Panggil fungsi dari WASM
+            helloWasm();
+        }
+    </script>
+</body>
+</html>
